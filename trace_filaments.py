@@ -15,8 +15,11 @@ from filfind_lib import (
     select_candidate_pairs_by_mean_std,
 )
 
+MIN_FILAMENT_POINTS = 2
+
 
 def fit_line_rms(points_xy):
+    # Fit an infinite line by PCA/SVD and return RMS orthogonal distance.
     if len(points_xy) < 2:
         return 0.0
     center = points_xy.mean(axis=0)
@@ -31,6 +34,7 @@ def fit_line_rms(points_xy):
 
 
 def angle_ok(endpoint_xy, inboard_xy, cand_xy, max_turn_deg):
+    # Limit sharp turns while extending a chain at either endpoint.
     if max_turn_deg is None:
         return True
     v_ref = endpoint_xy - inboard_xy
@@ -46,6 +50,8 @@ def angle_ok(endpoint_xy, inboard_xy, cand_xy, max_turn_deg):
 
 
 def build_candidate_graph(coords, k_std, max_neighbors):
+    # Build an undirected graph from short candidate pairs.
+    # For each point, only keep its nearest max_neighbors edges to cap branching.
     i_idx, j_idx, dist = compute_pairwise(coords, report_every=1_000_000)
     cand_i, cand_j, cand_d, mean_d, std_d, cutoff = select_candidate_pairs_by_mean_std(i_idx, j_idx, dist, k_std)
 
@@ -84,6 +90,7 @@ def build_candidate_graph(coords, k_std, max_neighbors):
 
 
 def choose_extension(chain, at_start, adj, coords, used, max_rms, max_turn_deg):
+    # Pick the best next point for one chain end under angle + line-fit constraints.
     endpoint = chain[0] if at_start else chain[-1]
     inboard = chain[1] if (at_start and len(chain) > 1) else (chain[-2] if len(chain) > 1 else None)
 
@@ -109,6 +116,7 @@ def choose_extension(chain, at_start, adj, coords, used, max_rms, max_turn_deg):
 
 
 def grow_chain(seed, adj, coords, used, max_rms, max_turn_deg):
+    # Greedily grow both ends until no legal extension remains.
     chain = [seed]
     changed = True
     while changed:
@@ -123,6 +131,88 @@ def grow_chain(seed, adj, coords, used, max_rms, max_turn_deg):
             chain = chain + [right]
             changed = True
     return chain
+
+
+def endpoint_direction(coords, chain, at_start):
+    # Tangent direction at one endpoint for directional merge checks.
+    if len(chain) < 2:
+        return None
+    if at_start:
+        p0 = coords[chain[0]]
+        p1 = coords[chain[1]]
+        vec = p0 - p1
+    else:
+        p0 = coords[chain[-1]]
+        p1 = coords[chain[-2]]
+        vec = p0 - p1
+    norm = np.linalg.norm(vec)
+    if norm == 0:
+        return None
+    return vec / norm
+
+
+def direction_angle_ok(v1, v2, max_angle_deg):
+    if max_angle_deg is None or v1 is None or v2 is None:
+        return True
+    cosang = float(np.dot(v1, v2))
+    cosang = max(-1.0, min(1.0, cosang))
+    ang = np.degrees(np.arccos(cosang))
+    return ang <= max_angle_deg
+
+
+def best_merge_candidate(chains, coords, max_join_dist, max_join_turn_deg, max_merge_rms):
+    # Try all endpoint pairings and pick the shortest valid join.
+    best = None
+    for i in range(len(chains)):
+        for j in range(i + 1, len(chains)):
+            a = chains[i]
+            b = chains[j]
+            orientations = [
+                (a, b),  # a end -> b start
+                (a, b[::-1]),  # a end -> b end
+                (a[::-1], b),  # a start -> b start
+                (a[::-1], b[::-1]),  # a start -> b end
+            ]
+
+            for a_oriented, b_oriented in orientations:
+                a_end = coords[a_oriented[-1]]
+                b_start = coords[b_oriented[0]]
+                join_dist = float(np.linalg.norm(a_end - b_start))
+                if join_dist > max_join_dist:
+                    continue
+
+                va = endpoint_direction(coords, a_oriented, at_start=False)
+                vb = endpoint_direction(coords, b_oriented, at_start=True)
+                if not direction_angle_ok(va, vb, max_join_turn_deg):
+                    continue
+
+                merged = a_oriented + b_oriented
+                if fit_line_rms(coords[merged]) > max_merge_rms:
+                    continue
+
+                score = (join_dist, len(merged))
+                if best is None or score < best[0]:
+                    best = (score, i, j, merged)
+    return best
+
+
+def merge_filaments(chains, coords, max_join_dist, max_join_turn_deg, max_merge_rms):
+    # Greedily merge the closest valid chain pair until no merge remains.
+    chains = [list(c) for c in chains]
+    merges = 0
+    while True:
+        cand = best_merge_candidate(chains, coords, max_join_dist, max_join_turn_deg, max_merge_rms)
+        if cand is None:
+            break
+        _, i, j, merged = cand
+        keep = []
+        for idx, c in enumerate(chains):
+            if idx not in (i, j):
+                keep.append(c)
+        keep.append(merged)
+        chains = keep
+        merges += 1
+    return chains, merges
 
 
 def write_assignments_csv(path, coords, fom, filaments):
@@ -143,6 +233,18 @@ def plot_filaments(mrc_path, out_path, coords, filaments, dpi=220, show=False, e
     fig, ax = plt.subplots(figsize=(10, 10), constrained_layout=True)
     ax.imshow(img, cmap="gray", origin="upper")
 
+    if endpoints_only and len(coords):
+        # Show all picks above FOM cutoff as context, independent of filament assignment.
+        ax.scatter(
+            coords[:, 0],
+            coords[:, 1],
+            s=10,
+            facecolors="none",
+            edgecolors="#4FC3F7",
+            linewidths=0.45,
+            alpha=0.5,
+        )
+
     cmap = plt.get_cmap("tab20")
     for fid, chain in enumerate(filaments):
         pts = coords[np.asarray(chain, dtype=int)]
@@ -150,6 +252,7 @@ def plot_filaments(mrc_path, out_path, coords, filaments, dpi=220, show=False, e
         if endpoints_only:
             start = pts[0]
             end = pts[-1]
+            ax.scatter(pts[:, 0], pts[:, 1], s=12, c=[color], alpha=0.75)
             ax.plot([start[0], end[0]], [start[1], end[1]], color=color, linewidth=2.0, alpha=0.95)
             ax.scatter(start[0], start[1], s=56, c=[color], marker="o")
             ax.scatter(end[0], end[1], s=70, c=[color], marker="x", linewidths=1.8)
@@ -181,10 +284,27 @@ def main():
     parser.add_argument("--fom-min", type=float, default=0.0, help="Minimum FOM filter")
     parser.add_argument("--fom-max", type=float, default=None, help="Maximum FOM filter")
     parser.add_argument("--candidate-k-std", type=float, default=1.0, help="Pair candidate threshold k in mean-k*std")
-    parser.add_argument("--max-neighbors", type=int, default=4, help="Max nearest candidate edges per node")
+    parser.add_argument("--max-neighbors", type=int, default=2, help="Max nearest candidate edges per node")
     parser.add_argument("--max-line-rms", type=float, default=10.0, help="Max allowed RMS deviation from best-fit line")
     parser.add_argument("--max-turn-deg", type=float, default=70.0, help="Max local turning angle at chain ends")
-    parser.add_argument("--min-filament-points", type=int, default=4, help="Minimum points for a kept filament")
+    parser.add_argument(
+        "--merge-endpoint-max-dist",
+        type=float,
+        default=220.0,
+        help="Max distance between chain endpoints for post-pass merge",
+    )
+    parser.add_argument(
+        "--merge-max-turn-deg",
+        type=float,
+        default=35.0,
+        help="Max direction mismatch (deg) at merge junction",
+    )
+    parser.add_argument(
+        "--merge-max-rms",
+        type=float,
+        default=None,
+        help="Max RMS line deviation for merged chains (default: --max-line-rms)",
+    )
     parser.add_argument("--out-prefix", type=Path, default=Path("filament_trace"), help="Output prefix")
     parser.add_argument("--show", action="store_true", help="Show interactive overlay window")
     parser.add_argument("--no-save-overlay", action="store_true", help="Do not save overlay PNG")
@@ -208,10 +328,12 @@ def main():
         f"distance <= mean - k*std = {mean_d:.3f} - {args.candidate_k_std:.3f}*{std_d:.3f} = {cutoff:.3f}"
     )
     progress(f"[graph] kept graph edges: {kept_pairs} / {all_pairs}")
+    progress(f"[trace] minimum filament length is fixed at {MIN_FILAMENT_POINTS} points")
 
     start_scores = np.nan_to_num(fom, nan=-np.inf)
     seed_order = np.argsort(-start_scores)
 
+    # One-use policy: once a point is assigned to a filament, it cannot be reused.
     used = set()
     filaments = []
     for seed in seed_order:
@@ -222,13 +344,31 @@ def main():
             continue
 
         chain = grow_chain(seed, adj, coords, used, args.max_line_rms, args.max_turn_deg)
-        if len(chain) >= args.min_filament_points:
+        if len(chain) >= MIN_FILAMENT_POINTS:
             filaments.append(chain)
             used.update(chain)
             progress(
                 f"[trace] filament {len(filaments)-1}: points={len(chain)} "
                 f"start={chain[0]} end={chain[-1]}"
             )
+        else:
+            # Mark isolated/failed seeds as consumed so they are not recycled later.
+            used.update(chain)
+
+    merge_rms = args.max_line_rms if args.merge_max_rms is None else args.merge_max_rms
+    pre_merge_count = len(filaments)
+    filaments, merge_count = merge_filaments(
+        filaments,
+        coords,
+        max_join_dist=args.merge_endpoint_max_dist,
+        max_join_turn_deg=args.merge_max_turn_deg,
+        max_merge_rms=merge_rms,
+    )
+    progress(
+        f"[merge] endpoint max dist={args.merge_endpoint_max_dist:.1f}, "
+        f"max turn={args.merge_max_turn_deg:.1f}, max rms={merge_rms:.1f}"
+    )
+    progress(f"[merge] merged {merge_count} times: filaments {pre_merge_count} -> {len(filaments)}")
 
     out_prefix = args.out_prefix
     out_prefix.parent.mkdir(parents=True, exist_ok=True)
