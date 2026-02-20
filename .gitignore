@@ -1,0 +1,11 @@
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Generated analysis outputs
+*.png
+*.npz
+*_assignments.csv
+
+# Optional local env metadata
+.python-version
