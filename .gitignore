@@ -7,5 +7,9 @@ __pycache__/
 *.npz
 *_assignments.csv
 
+# Raw cryo-EM data files
+*.mrc
+*.star
+
 # Optional local env metadata
 .python-version
