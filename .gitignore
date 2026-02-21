@@ -2,8 +2,12 @@
 __pycache__/
 *.py[cod]
 
+# IDE metadata
+.idea/
+
 # Generated analysis outputs
 *.png
+*.gif
 *.npz
 *_assignments.csv
 
