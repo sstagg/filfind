@@ -15,6 +15,9 @@ from filfind_lib import (
     select_candidate_pairs_by_mean_std,
 )
 
+LINE_COLOR = "red"
+LINE_WIDTH = 1.2
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -33,12 +36,6 @@ def main():
     )
     parser.add_argument("--max-lines", type=int, default=3000, help="Max candidate lines to draw (<=0 means all)")
     parser.add_argument("--line-alpha", type=float, default=0.25, help="Candidate line alpha")
-    parser.add_argument("--line-width", type=float, default=0.6, help="Candidate line width")
-    parser.add_argument(
-        "--line-color",
-        default="#00BCD4",
-        help="Fixed line color (used unless --color-by-distance is set)",
-    )
     parser.add_argument(
         "--color-by-distance",
         action="store_true",
@@ -96,14 +93,14 @@ def main():
                 segments,
                 cmap=args.line_cmap,
                 array=cand_d,
-                linewidths=args.line_width,
+                linewidths=LINE_WIDTH,
                 alpha=args.line_alpha,
             )
         else:
             lc = LineCollection(
                 segments,
-                colors=args.line_color,
-                linewidths=args.line_width,
+                colors=LINE_COLOR,
+                linewidths=LINE_WIDTH,
                 alpha=args.line_alpha,
             )
         ax.add_collection(lc)
@@ -116,7 +113,7 @@ def main():
         auto_xy[:, 1],
         s=16,
         facecolors="none",
-        edgecolors="#4FC3F7",
+        edgecolors=LINE_COLOR,
         linewidths=0.6,
         alpha=0.9,
         label=f"Topaz picks (n={len(auto_xy)})",
