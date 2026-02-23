@@ -47,6 +47,7 @@ def main():
     parser.add_argument("--max-neighbors", type=int, default=2, help="Max nearest candidate edges per node")
     parser.add_argument("--max-line-rms", type=float, default=10.0, help="Max allowed RMS deviation from best-fit line")
     parser.add_argument("--save-npz", action="store_true", help="Save trace summary NPZ (disabled by default)")
+    parser.add_argument("--out-dir", type=Path, default=None, help="Optional directory for output files")
     parser.add_argument("--no-save-overlay", action="store_true", help="Do not save overlay PNG")
     parser.add_argument("--dpi", type=int, default=220, help="Output DPI")
     parser.add_argument("--max-files", type=int, default=None, help="Optional cap on number of STAR files processed")
@@ -90,6 +91,7 @@ def main():
                 growth_movie_out=None,
                 growth_movie_fps=8,
                 dpi=args.dpi,
+                out_dir=args.out_dir,
             )
             ok += 1
         except Exception as exc:

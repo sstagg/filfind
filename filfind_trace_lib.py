@@ -219,9 +219,10 @@ def plot_filaments(mrc_path, out_path, coords, filaments, dpi=220, show=False):
     plt.close(fig)
 
 
-def default_out_prefix_for_mrc(mrc_path):
+def default_out_prefix_for_mrc(mrc_path, out_dir=None):
     stem = mrc_path.with_suffix("").name
-    return mrc_path.with_suffix("").parent / f"{stem}_filfind"
+    base_dir = Path(out_dir) if out_dir is not None else mrc_path.with_suffix("").parent
+    return base_dir / f"{stem}_filfind"
 
 
 def trace_filaments_single(
@@ -239,11 +240,12 @@ def trace_filaments_single(
     growth_movie_fps=8,
     dpi=220,
     out_prefix=None,
+    out_dir=None,
     progress_fn=progress,
 ):
     autopick_path = Path(autopick_path)
     mrc_path = Path(mrc_path)
-    out_prefix = Path(out_prefix) if out_prefix is not None else default_out_prefix_for_mrc(mrc_path)
+    out_prefix = Path(out_prefix) if out_prefix is not None else default_out_prefix_for_mrc(mrc_path, out_dir=out_dir)
     out_prefix.parent.mkdir(parents=True, exist_ok=True)
 
     coords, fom = load_topaz_coords(autopick_path)
