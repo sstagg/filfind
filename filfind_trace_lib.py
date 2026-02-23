@@ -221,7 +221,7 @@ def plot_filaments(mrc_path, out_path, coords, filaments, dpi=220, show=False):
 
 def default_out_prefix_for_mrc(mrc_path, out_dir=None):
     stem = mrc_path.with_suffix("").name
-    base_dir = Path(out_dir) if out_dir is not None else mrc_path.with_suffix("").parent
+    base_dir = Path(out_dir).resolve() if out_dir is not None else mrc_path.with_suffix("").parent
     return base_dir / f"{stem}_filfind"
 
 

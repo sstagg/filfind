@@ -15,7 +15,14 @@ def main():
     parser.add_argument("--max-neighbors", type=int, default=2, help="Max nearest candidate edges per node")
     parser.add_argument("--max-line-rms", type=float, default=10.0, help="Max allowed RMS deviation from best-fit line")
     parser.add_argument("--save-npz", action="store_true", help="Save trace summary NPZ (disabled by default)")
-    parser.add_argument("--out-dir", type=Path, default=None, help="Optional directory for output files")
+    parser.add_argument(
+        "--out-dir",
+        "--output-dir",
+        dest="out_dir",
+        type=Path,
+        default=None,
+        help="Optional directory for output files (default: next to MRC)",
+    )
     parser.add_argument("--show", action="store_true", help="Show interactive overlay window")
     parser.add_argument("--no-save-overlay", action="store_true", help="Do not save overlay PNG")
     parser.add_argument(
