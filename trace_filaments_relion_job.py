@@ -65,6 +65,8 @@ def run_trace_job(job):
             "total": job["total"],
             "star_name": job["star_name"],
             "status": "ok",
+            "mrc_path": job["mrc_path"],
+            "endpoints_star_path": job["endpoints_star_path"],
         }
     except Exception as exc:
         return {
@@ -79,6 +81,30 @@ def run_trace_job(job):
 def append_log(path, text):
     with path.open("a", encoding="utf-8") as log:
         log.write(text)
+
+
+def rel_or_abs(path, base):
+    path = Path(path).resolve()
+    base = Path(base).resolve()
+    try:
+        return path.relative_to(base).as_posix()
+    except ValueError:
+        return path.as_posix()
+
+
+def write_coordinate_files_star(path, rows, rel_base):
+    # RELION coordinate-file STAR linking each micrograph to its coordinates STAR.
+    with path.open("w", encoding="utf-8") as f:
+        f.write("\n")
+        f.write("# version 50001\n\n")
+        f.write("data_coordinate_files\n\n")
+        f.write("loop_ \n")
+        f.write("_rlnMicrographName #1 \n")
+        f.write("_rlnMicrographCoordinates #2 \n")
+        for mrc_path, coord_path in rows:
+            mrc_txt = rel_or_abs(mrc_path, rel_base)
+            coord_txt = rel_or_abs(coord_path, rel_base)
+            f.write(f"{mrc_txt} {coord_txt}\n")
 
 
 def main():
@@ -197,6 +223,10 @@ def main():
                 stem = mrc_path.with_suffix("").name
                 out_prefix = out_dir / f"{stem}_filfind"
                 progress(f"[batch] out-prefix: {out_prefix}")
+            if out_prefix is None:
+                endpoints_star_path = mrc_path.with_suffix("").parent / f"{mrc_path.with_suffix('').name}_filfind_endpoints.star"
+            else:
+                endpoints_star_path = out_prefix.parent / f"{out_prefix.name}_endpoints.star"
 
             cmd_equivalent = [
                 "python",
@@ -220,8 +250,8 @@ def main():
                 cmd_equivalent += ["--save-npz"]
             if args.no_save_overlay:
                 cmd_equivalent += ["--no-save-overlay"]
-            if out_prefix is not None:
-                cmd_equivalent += ["--out-prefix", out_prefix]
+            if out_dir is not None:
+                cmd_equivalent += ["--out-dir", out_dir]
             cmd_equivalent += ["--dpi", args.dpi]
 
             append_log(
@@ -245,11 +275,13 @@ def main():
                 "dpi": int(args.dpi),
                 "out_prefix": str(out_prefix) if out_prefix is not None else None,
                 "out_dir": str(out_dir) if out_dir is not None else None,
+                "endpoints_star_path": str(endpoints_star_path),
             }
         return None
 
     ok = 0
     failed = 0
+    coordinate_rows = []
 
     if workers == 1:
         while True:
@@ -261,6 +293,7 @@ def main():
                 ok += 1
                 progress(f"[batch] done {result['index']}/{result['total']}: {result['star_name']}")
                 append_log(command_log, f"[{result['index']}/{result['total']}] status=ok\n")
+                coordinate_rows.append((result["mrc_path"], result["endpoints_star_path"]))
             else:
                 failed += 1
                 progress(f"[batch] failed for {result['star_name']}: {result['error']}")
@@ -299,6 +332,7 @@ def main():
                                 ok += 1
                                 progress(f"[batch] done {result['index']}/{result['total']}: {result['star_name']}")
                                 append_log(command_log, f"[{result['index']}/{result['total']}] status=ok\n")
+                                coordinate_rows.append((result["mrc_path"], result["endpoints_star_path"]))
                             else:
                                 failed += 1
                                 progress(f"[batch] failed for {result['star_name']}: {result['error']}")
@@ -323,6 +357,7 @@ def main():
                     ok += 1
                     progress(f"[batch] done {result['index']}/{result['total']}: {result['star_name']}")
                     append_log(command_log, f"[{result['index']}/{result['total']}] status=ok\n")
+                    coordinate_rows.append((result["mrc_path"], result["endpoints_star_path"]))
                 else:
                     failed += 1
                     progress(f"[batch] failed for {result['star_name']}: {result['error']}")
@@ -330,6 +365,15 @@ def main():
                         command_log,
                         f"[{result['index']}/{result['total']}] status=failed\n  error: {result['error']}\n",
                     )
+
+    combined_star_path = (out_dir if out_dir is not None else job_dir) / "filfind_coordinate_files.star"
+    if coordinate_rows:
+        write_coordinate_files_star(combined_star_path, coordinate_rows, rel_base=job_dir.parent)
+        progress(f"[batch] saved combined coordinate STAR: {combined_star_path}")
+        append_log(command_log, f"[batch] combined_coordinate_star={combined_star_path}\n")
+    else:
+        progress("[batch] no successful jobs; combined coordinate STAR not written")
+        append_log(command_log, "[batch] no successful jobs; combined coordinate STAR not written\n")
 
     progress(f"[batch] done: success={ok}, missing_mrc={missing_mrc}, failed={failed}, total={len(star_files)}")
 
