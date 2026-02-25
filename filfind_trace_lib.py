@@ -15,6 +15,8 @@ from filfind_lib import (
 )
 
 MIN_FILAMENT_POINTS = 2
+OVERLAY_RENDER_DPI = 100
+GROWTH_MOVIE_DPI = 150
 
 
 def fit_line_rms(points_xy):
@@ -188,14 +190,47 @@ def write_filament_endpoints_star(path, coords, filaments):
             f.write(f" {xy[0]:11.6f}  {xy[1]:11.6f}            2   -999.00000   -999.00000 \n")
 
 
-def plot_filaments(mrc_path, out_path, coords, filaments, dpi=220, show=False):
+def downsample_for_overlay(img, coords, max_dim):
+    # Keep overlay image output size bounded to reduce I/O cost for batch jobs.
+    # Use one power-of-two binning pass to preserve contrast structure better than arbitrary resizing.
+    if max_dim is None or max_dim <= 0:
+        return img, coords, 1.0
+    h, w = img.shape[:2]
+    largest = max(h, w)
+    if largest <= max_dim:
+        return img, coords, 1.0
+
+    # Bin by factor=2^n where n is the largest value that keeps output near max_dim.
+    n = int(np.floor(np.log2(float(largest) / float(max_dim))))
+    if n <= 0:
+        # Factor-of-two binning would be 1x; keep image unchanged.
+        return img, coords, 1.0
+    factor = 2**n
+
+    h_trim = (h // factor) * factor
+    w_trim = (w // factor) * factor
+    if h_trim == 0 or w_trim == 0:
+        return img, coords, 1.0
+
+    cropped = img[:h_trim, :w_trim]
+    img_ds = cropped.reshape(h_trim // factor, factor, w_trim // factor, factor).mean(axis=(1, 3))
+    scale = 1.0 / float(factor)
+    coords_ds = coords * scale
+    return img_ds, coords_ds, scale
+
+
+def plot_filaments(mrc_path, out_path, coords, filaments, show=False, overlay_max_dim=1024):
     img = read_mrc_2d(mrc_path)
-    fig, ax = plt.subplots(figsize=(10, 10), constrained_layout=True)
-    ax.imshow(img, cmap="gray", origin="upper")
+    img, coords_plot, scale = downsample_for_overlay(img, coords, overlay_max_dim)
+    # Set figure size from raster dimensions so saved PNG matches the target image size.
+    fig_w = max(1.0, img.shape[1] / float(OVERLAY_RENDER_DPI))
+    fig_h = max(1.0, img.shape[0] / float(OVERLAY_RENDER_DPI))
+    fig, ax = plt.subplots(figsize=(fig_w, fig_h))
+    ax.imshow(img, cmap="gray", origin="upper", interpolation="nearest", resample=False)
 
     cmap = plt.get_cmap("tab20")
     for fid, chain in enumerate(filaments):
-        pts = coords[np.asarray(chain, dtype=int)]
+        pts = coords_plot[np.asarray(chain, dtype=int)]
         color = cmap(fid % 20)
         start = pts[0]
         end = pts[-1]
@@ -205,7 +240,10 @@ def plot_filaments(mrc_path, out_path, coords, filaments, dpi=220, show=False):
         ax.scatter(start[0], start[1], s=56, c=[color], marker="o")
         ax.scatter(end[0], end[1], s=70, c=[color], marker="x", linewidths=1.8)
 
-    ax.set_title(f"{mrc_path.name}\\nFilament picks with start/end connecting lines")
+    if scale < 1.0:
+        ax.set_title(f"{mrc_path.name}\\nFilament picks with start/end connecting lines (downscaled x{scale:.3f})")
+    else:
+        ax.set_title(f"{mrc_path.name}\\nFilament picks with start/end connecting lines")
     ax.set_xlim(0, img.shape[1])
     ax.set_ylim(img.shape[0], 0)
     ax.set_xlabel("X (pixels)")
@@ -213,7 +251,8 @@ def plot_filaments(mrc_path, out_path, coords, filaments, dpi=220, show=False):
 
     if out_path is not None:
         out_path.parent.mkdir(parents=True, exist_ok=True)
-        fig.savefig(out_path, dpi=dpi)
+        fig.subplots_adjust(left=0, right=1, top=1, bottom=0)
+        fig.savefig(out_path, dpi=OVERLAY_RENDER_DPI)
     if show:
         plt.show()
     plt.close(fig)
@@ -238,7 +277,7 @@ def trace_filaments_single(
     no_save_overlay=False,
     growth_movie_out=None,
     growth_movie_fps=8,
-    dpi=220,
+    overlay_max_dim=1024,
     out_prefix=None,
     out_dir=None,
     progress_fn=progress,
@@ -303,8 +342,8 @@ def trace_filaments_single(
         overlay_path,
         coords,
         filaments,
-        dpi=dpi,
         show=show,
+        overlay_max_dim=overlay_max_dim,
     )
 
     endpoints_star_path = out_prefix.parent / f"{out_prefix.name}_endpoints.star"
@@ -337,7 +376,7 @@ def trace_filaments_single(
         movie_out = Path(growth_movie_out)
         if movie_out.suffix.lower() != ".gif":
             movie_out = movie_out.with_suffix(".gif")
-        save_growth_movie_gif(mrc_path, movie_out, coords, growth_frames, dpi=dpi, fps=growth_movie_fps)
+        save_growth_movie_gif(mrc_path, movie_out, coords, growth_frames, dpi=GROWTH_MOVIE_DPI, fps=growth_movie_fps)
         progress_fn(f"[done] saved growth movie: {movie_out.resolve()}")
     progress_fn(f"[done] saved filament endpoints STAR: {endpoints_star_path.resolve()}")
     if save_npz:

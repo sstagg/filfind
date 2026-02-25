@@ -55,7 +55,7 @@ def run_trace_job(job):
             no_save_overlay=job["no_save_overlay"],
             growth_movie_out=None,
             growth_movie_fps=8,
-            dpi=job["dpi"],
+            overlay_max_dim=job["overlay_max_dim"],
             out_prefix=Path(job["out_prefix"]) if job["out_prefix"] is not None else None,
             out_dir=Path(job["out_dir"]) if job["out_dir"] is not None else None,
             progress_fn=quiet_progress,
@@ -136,7 +136,12 @@ def main():
         help="Optional directory for output files (default: next to each MRC)",
     )
     parser.add_argument("--no-save-overlay", action="store_true", help="Do not save overlay PNG")
-    parser.add_argument("--dpi", type=int, default=220, help="Output DPI")
+    parser.add_argument(
+        "--overlay-max-dim",
+        type=int,
+        default=1024,
+        help="Maximum overlay PNG dimension in pixels (largest side, <=0 disables downscale)",
+    )
     parser.add_argument("--max-files", type=int, default=None, help="Optional cap on number of STAR files processed")
     parser.add_argument(
         "--workers",
@@ -198,7 +203,7 @@ def main():
             f"star_pattern={args.star_pattern}\n"
             f"fom_min={args.fom_min} fom_max={args.fom_max}\n"
             f"candidate_k_std={args.candidate_k_std} max_neighbors={args.max_neighbors} max_line_rms={args.max_line_rms}\n"
-            f"save_npz={args.save_npz} no_save_overlay={args.no_save_overlay} dpi={args.dpi}\n"
+            f"save_npz={args.save_npz} no_save_overlay={args.no_save_overlay} overlay_max_dim={args.overlay_max_dim}\n"
             f"max_files={args.max_files}\n"
         ),
     )
@@ -250,9 +255,9 @@ def main():
                 cmd_equivalent += ["--save-npz"]
             if args.no_save_overlay:
                 cmd_equivalent += ["--no-save-overlay"]
+            cmd_equivalent += ["--overlay-max-dim", args.overlay_max_dim]
             if out_dir is not None:
                 cmd_equivalent += ["--out-dir", out_dir]
-            cmd_equivalent += ["--dpi", args.dpi]
 
             append_log(
                 command_log,
@@ -272,7 +277,7 @@ def main():
                 "max_line_rms": args.max_line_rms,
                 "save_npz": bool(args.save_npz),
                 "no_save_overlay": bool(args.no_save_overlay),
-                "dpi": int(args.dpi),
+                "overlay_max_dim": int(args.overlay_max_dim),
                 "out_prefix": str(out_prefix) if out_prefix is not None else None,
                 "out_dir": str(out_dir) if out_dir is not None else None,
                 "endpoints_star_path": str(endpoints_star_path),

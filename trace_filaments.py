@@ -32,7 +32,12 @@ def main():
         help="Optional output animated GIF showing greedy chain growth",
     )
     parser.add_argument("--growth-movie-fps", type=int, default=8, help="FPS for --growth-movie-out")
-    parser.add_argument("--dpi", type=int, default=220, help="Output DPI")
+    parser.add_argument(
+        "--overlay-max-dim",
+        type=int,
+        default=1024,
+        help="Maximum overlay PNG dimension in pixels (largest side, <=0 disables downscale)",
+    )
     args = parser.parse_args()
 
     trace_filaments_single(
@@ -48,7 +53,7 @@ def main():
         no_save_overlay=args.no_save_overlay,
         growth_movie_out=args.growth_movie_out,
         growth_movie_fps=args.growth_movie_fps,
-        dpi=args.dpi,
+        overlay_max_dim=args.overlay_max_dim,
         out_dir=args.out_dir,
     )
 

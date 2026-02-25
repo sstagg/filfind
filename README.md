@@ -37,6 +37,7 @@ python trace_filaments.py \
   --candidate-k-std 1.5 \
   --max-neighbors 2 \
   --max-line-rms 14 \
+  --overlay-max-dim 1024 \
   --out-dir /path/to/out
 ```
 
@@ -50,11 +51,13 @@ python trace_filaments_relion_job.py \
   --candidate-k-std 1.5 \
   --max-neighbors 2 \
   --max-line-rms 14 \
+  --overlay-max-dim 1024 \
   --output-dir /path/to/out
 ```
 
 Notes:
 - `--output-dir` and `--out-dir` are equivalent.
+- Overlay PNGs are downscaled to max dimension `1024` by default (`--overlay-max-dim`).
 - For multiline shell commands, each continued line must end with `\`.
 - In batch mode, outputs are forced under `--output-dir` when provided.
 
