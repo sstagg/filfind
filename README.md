@@ -25,6 +25,7 @@ pip install numpy matplotlib mrcfile starfile
 
 - `trace_filaments.py`: run tracing on one STAR/MRC pair.
 - `trace_filaments_relion_job.py`: batch over a RELION-style job tree.
+- `extract_filament_endpoints.py`: recover filament endpoints from a cleaned particle STAR that still has filament IDs.
 - `filfind_trace_lib.py`: shared tracing logic.
 
 ## Single-file run
@@ -54,6 +55,50 @@ python trace_filaments_relion_job.py \
   --overlay-max-dim 1024 \
   --output-dir /path/to/out
 ```
+
+## Recover endpoints from cleaned particles
+
+After 2D/3D cleanup, you may have good particle picks from each filament but no original start/end picks. If the particle STAR still contains `_rlnMicrographName` and a filament identity column such as `_rlnHelicalTubeID`, this command groups picks by micrograph and filament, finds the two picks farthest apart in each filament, and writes recovered endpoint picks back into per-micrograph coordinate STAR files:
+
+```bash
+python extract_filament_endpoints.py \
+  --input /path/to/clean_particles.star \
+  --out-dir /path/to/endpoint_coords \
+  --output /path/to/endpoint_coords/filfind_coordinate_files.star
+```
+
+The `--output` file is a RELION-style coordinate-files STAR with `_rlnMicrographName` and `_rlnMicrographCoordinates`; each referenced coordinate STAR contains the recovered start/end coordinates for one micrograph.
+
+By default, the script auto-detects common RELION-style filament columns:
+
+- `_rlnHelicalTubeID`
+- `_rlnFilamentID`
+- `_rlnFilamentNumber`
+- `_rlnTubeID`
+- `_rlnHelicalTubeName`
+
+If your STAR uses a different column, pass it explicitly:
+
+```bash
+python extract_filament_endpoints.py \
+  --input /path/to/clean_particles.star \
+  --filament-column _rlnMyFilamentColumn \
+  --out-dir /path/to/endpoint_coords
+```
+
+If you want an extra combined endpoint STAR for inspection, add `--single-star /path/to/all_endpoints.star`.
+
+Singleton classified particles can optionally be mapped back to the original filfind endpoints. Groups with 2+ classified particles still use the farthest classified pair; groups with exactly 1 classified particle keep the nearest original endpoint pair when the singleton lies close to that original finite segment:
+
+```bash
+python extract_filament_endpoints.py \
+  --input /path/to/clean_particles.star \
+  --out-dir /path/to/endpoint_coords \
+  --singleton-parent-endpoint-dir /path/to/original/filfind/out \
+  --singleton-max-distance-px 5
+```
+
+To render binned overlay PNGs next to the output STAR files, add `--mrc-dir /path/to/MotionCorr/jobXXX/frames`. By default this renders every matching image; add `--max-images N` to limit the run.
 
 Notes:
 - `--output-dir` and `--out-dir` are equivalent.
