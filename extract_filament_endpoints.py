@@ -18,6 +18,12 @@ def default_out_dir(star_path):
     return star_path.with_name(f"{stem}_filfind_endpoint_coords")
 
 
+def strip_suffix(text, suffix):
+    if text.endswith(suffix):
+        return text[: -len(suffix)]
+    return text
+
+
 def render_preview_overlays(endpoint_dir, mrc_dir, max_images=None, preview_max_dim=1024):
     os.environ.setdefault("MPLCONFIGDIR", "/tmp/filfind_mplconfig")
     Path(os.environ["MPLCONFIGDIR"]).mkdir(parents=True, exist_ok=True)
@@ -35,7 +41,7 @@ def render_preview_overlays(endpoint_dir, mrc_dir, max_images=None, preview_max_
 
     candidates = []
     for star in sorted(endpoint_dir.glob("*_filfind_endpoints.star")):
-        stem = star.name.removesuffix("_filfind_endpoints.star")
+        stem = strip_suffix(star.name, "_filfind_endpoints.star")
         mrc = mrc_dir / f"{stem}.mrc"
         if not mrc.exists():
             continue
